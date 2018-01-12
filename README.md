@@ -21,6 +21,23 @@ Columns:
 - `PSS(MB)`: Proportional Set Size (Mbytes). Accounting for shared pages.
 - `Ref(MB)`: Referenced (Mbytes) during the specified duration. This is the working set size metric.
 
+USAGE:
+
+<pre>
+# <b>./wss.pl -h</b>
+Unknown option: h
+USAGE: wss [options] PID duration(s)
+	-C         # show cumulative output every duration(s)
+	-s secs    # show a duration(s) snapshot every secs
+	-d secs    # total duration of measuremnt (for -s or -C)
+   eg,
+	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
+	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
+	wss -C 181 5       # show PID 181 growth every 5 seconds
+	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
+	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
+</pre>
+
 WARNINGs:
 
 This tool uses /proc/PID/clear_refs and /proc/PID/smaps, and does
