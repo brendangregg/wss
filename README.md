@@ -28,7 +28,7 @@ USAGE:
 Unknown option: h
 USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
-	-s secs    # show a duration(s) snapshot every secs
+	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
@@ -36,6 +36,7 @@ USAGE: wss [options] PID duration(s)
 	wss -C 181 5       # show PID 181 growth every 5 seconds
 	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
+	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
 </pre>
 
 WARNINGs:

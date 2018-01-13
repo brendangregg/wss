@@ -39,7 +39,7 @@ sub usage {
 	die <<USAGE_END;
 USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
-	-s secs    # show a duration(s) snapshot every secs
+	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
@@ -47,10 +47,11 @@ USAGE: wss [options] PID duration(s)
 	wss -C 181 5       # show PID 181 growth every 5 seconds
 	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
+	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
 USAGE_END
 }
 
-my $snapshot = 0;
+my $snapshot = -1;
 my $totalsecs = 999999999;
 my $cumulative = 0;
 GetOptions(
@@ -79,8 +80,12 @@ my $time = 0;
 # headers
 if ($cumulative) {
 	printf "Watching PID $pid page references grow, output every $duration seconds...\n";
-} elsif ($snapshot) {
-	printf "Watching PID $pid page references for $duration seconds, once every $snapshot seconds...\n";
+} elsif ($snapshot != -1) {
+	if ($snapshot == 0) {
+		printf "Watching PID $pid page references for every $duration seconds...\n";
+	} else {
+		printf "Watching PID $pid page references for $duration seconds, repeating after $snapshot second pauses...\n";
+	}
 } else {
 	printf "Watching PID $pid page references during $duration seconds...\n";
 }
@@ -118,7 +123,7 @@ while (1) {
 
 	printf "%10.2f %10.2f %10.2f\n", $rss / 1024, $pss / 1024, $referenced / 1024;
 
-	if ($snapshot) {
+	if ($snapshot != -1) {
 		select(undef, undef, undef, $snapshot);
 		$time += $snapshot;
 	} elsif (not $cumulative) {
