@@ -119,7 +119,7 @@ while (1) {
 	printf "%10.2f %10.2f %10.2f\n", $rss / 1024, $pss / 1024, $referenced / 1024;
 
 	if ($snapshot) {
-		sleep($snapshot);
+		select(undef, undef, undef, $snapshot);
 		$time += $snapshot;
 	} elsif (not $cumulative) {
 		last;
