@@ -30,6 +30,7 @@ USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
 	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
+	-P steps   # profile run, starting with duration(s)
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
@@ -37,6 +38,7 @@ USAGE: wss [options] PID duration(s)
 	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
 	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
+	wss -P 10 181 0.01 # 10 step power-of-2 profile, starting with 0.01s
 </pre>
 
 WARNINGs:

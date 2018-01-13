@@ -41,6 +41,7 @@ USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
 	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
+	-P steps   # profile run, starting with duration(s)
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
@@ -48,37 +49,55 @@ USAGE: wss [options] PID duration(s)
 	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
 	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
+	wss -P 10 181 0.01 # 10 step power-of-2 profile, starting with 0.01s
 USAGE_END
 }
 
 my $snapshot = -1;
 my $totalsecs = 999999999;
 my $cumulative = 0;
+my $profile = 0;
 GetOptions(
 	'snapshot|s=f'  => \$snapshot,
 	'duration|d=f'  => \$totalsecs,
 	'cumulative|C'  => \$cumulative,
+	'profile|P=i'  => \$profile,
 ) or usage();
+my $pid = $ARGV[0];
+my $duration = $ARGV[1];
 
 if (@ARGV < 2 || $ARGV[0] eq "-h" || $ARGV[0] eq "--help") {
 	usage();
 	exit;
 }
-if ($cumulative and $snapshot) {
-	print STDERR "ERROR: Can't use -C and -s (doesn't make much sense). Exiting.\n";
+if ((!!$cumulative + ($snapshot != -1) + !!$profile) > 1) {
+	print STDERR "ERROR: Can't combine -C, -s, and P. Exiting.\n";
 	exit;
 }
-my $pid = $ARGV[0];
-my $duration = $ARGV[1];
+if ($duration < 0.001) {
+	print STDERR "ERROR: Duration too short. Exiting.\n";
+	exit;
+}
+
 my $clear_ref = "/proc/$pid/clear_refs";
 my $smaps = "/proc/$pid/smaps";
 my ($rss, $pss, $referenced);
 my $metric;
 my $reset = 0;
 my $time = 0;
+my @profilesecs = ();
+if ($profile) {
+	my $d = $duration;
+	for (my $i = 0; $i < $profile; $i++) {
+		push(@profilesecs, $d);
+		$d *= 2;
+	}
+}
 
 # headers
-if ($cumulative) {
+if ($profile) {
+	printf "Watching PID $pid page references, profile beginning with $duration seconds, $profile steps...\n";
+} elsif ($cumulative) {
 	printf "Watching PID $pid page references grow, output every $duration seconds...\n";
 } elsif ($snapshot != -1) {
 	if ($snapshot == 0) {
@@ -89,18 +108,24 @@ if ($cumulative) {
 } else {
 	printf "Watching PID $pid page references during $duration seconds...\n";
 }
+printf "%-8s ", "Dur(s)" if $profile;
 printf "%10s %10s %10s\n", "RSS(MB)", "PSS(MB)", "Ref(MB)";
 
 # main
 while (1) {
-	if (not $cumulative or not $reset) {
+	if ($profile or not $cumulative or not $reset) {
 		open CLEAR, ">$clear_ref" or die "ERROR: can't open $clear_ref (older kernel?): $!";
 		print CLEAR "1";
 		close CLEAR;
 		$reset = 1;
 	}
 
-	select(undef, undef, undef, $duration);
+	my $sleep = $duration;
+	if ($profile) {
+		$sleep = shift @profilesecs;
+		last unless defined $sleep;
+	}
+	select(undef, undef, undef, $sleep);
 	$time += $duration;
 
 	$rss = $pss = $referenced = 0;
@@ -121,12 +146,13 @@ while (1) {
 	}
 	close SMAPS;
 
+	printf "%-8.3f ", $sleep if $profile;
 	printf "%10.2f %10.2f %10.2f\n", $rss / 1024, $pss / 1024, $referenced / 1024;
 
 	if ($snapshot != -1) {
 		select(undef, undef, undef, $snapshot);
 		$time += $snapshot;
-	} elsif (not $cumulative) {
+	} elsif (not $cumulative and not $profile) {
 		last;
 	}
 
