@@ -41,7 +41,7 @@ USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
 	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
-	-P steps   # profile run, starting with duration(s)
+	-P steps   # profile run (cumulative), from duration(s)
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
@@ -53,6 +53,7 @@ USAGE: wss [options] PID duration(s)
 USAGE_END
 }
 
+### options
 my $snapshot = -1;
 my $totalsecs = 999999999;
 my $cumulative = 0;
@@ -78,13 +79,8 @@ if ($duration < 0.001) {
 	print STDERR "ERROR: Duration too short. Exiting.\n";
 	exit;
 }
-
 my $clear_ref = "/proc/$pid/clear_refs";
 my $smaps = "/proc/$pid/smaps";
-my ($rss, $pss, $referenced);
-my $metric;
-my $reset = 0;
-my $time = 0;
 my @profilesecs = ();
 if ($profile) {
 	my $d = $duration;
@@ -94,9 +90,9 @@ if ($profile) {
 	}
 }
 
-# headers
+### headers
 if ($profile) {
-	printf "Watching PID $pid page references, profile beginning with $duration seconds, $profile steps...\n";
+	printf "Watching PID $pid page references grow, profile beginning with $duration seconds, $profile steps...\n";
 } elsif ($cumulative) {
 	printf "Watching PID $pid page references grow, output every $duration seconds...\n";
 } elsif ($snapshot != -1) {
@@ -111,13 +107,18 @@ if ($profile) {
 printf "%-8s ", "Dur(s)" if $profile;
 printf "%10s %10s %10s\n", "RSS(MB)", "PSS(MB)", "Ref(MB)";
 
-# main
+### main
+my ($rss, $pss, $referenced);
+my $metric;
+my $time = 0;
+my $firstreset = 0;
+
 while (1) {
-	if ($profile or not $cumulative or not $reset) {
+	if (not $firstreset or $snapshot != -1) {
 		open CLEAR, ">$clear_ref" or die "ERROR: can't open $clear_ref (older kernel?): $!";
 		print CLEAR "1";
 		close CLEAR;
-		$reset = 1;
+		$firstreset = 1;
 	}
 
 	my $sleep = $duration;
