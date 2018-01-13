@@ -18,13 +18,14 @@
 # WARNING: This tool uses /proc/PID/clear_refs and /proc/PID/smaps, and does
 # pause the target process for some milliseconds while address maps are read.
 # This can cause a short burst of latency for your application. For processes
-# with a lot of RSS (>100 Gbytes), the pause may be 1 second or longer. This
-# also activates some old kernel code that may not have been used in your
-# environment before, and which mucks with page flags: I'd guess there is a
-# risk of an undiscovered kernel panic (the Linux mm community should know
-# whether my guess is justified or not, if you want an expert opinion). Test in
-# a lab environment for your kernel versions, and consider this experimental:
-# use at your on risk.
+# with a lot of RSS (>100 Gbytes), the pause may be 1 second or longer. It also
+# resets the referenced flag, which might confuse the kernel as to which pages
+# to reclaim. This also activates some old kernel code that may not have been
+# used in your environment before, and which mucks with page flags: I'd guess
+# there is a risk of an undiscovered kernel panic (the Linux mm community
+# should know whether my guess is justified or not, if you want an expert
+# opinion). Test in a lab environment for your kernel versions, and consider
+# this experimental: use at your on risk.
 #
 # Copyright 2018 Netflix, Inc.
 # Licensed under the Apache License, Version 2.0 (the "License")
