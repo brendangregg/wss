@@ -1,6 +1,13 @@
 #!/usr/bin/perl -w
 #
-# wss	Estimate the working set size (WSS) for a process on Linux.
+# wss.pl	Estimate the working set size (WSS) for a process on Linux.
+#
+# http://www.brendangregg.com/wss.pl
+#
+# This uses /proc/PID/clear_refs and works on older Linux's (2.6.22+),
+# however, comes with warnings below. See its companion tool, wss.c, which uses
+# the newer idle page tracking from Linux 4.3+, however, is currently
+# prohibitively slow (as described in that tool).
 #
 # USAGE: wss [options] PID duration(s)
 #    eg,
@@ -15,17 +22,17 @@
 #
 # I could add more columns, but that's what pmap -X is for.
 #
-# WARNING: This tool uses /proc/PID/clear_refs and /proc/PID/smaps, and does
-# pause the target process for some milliseconds while address maps are read.
-# This can cause a short burst of latency for your application. For processes
-# with a lot of RSS (>100 Gbytes), the pause may be 1 second or longer. It also
-# resets the referenced flag, which might confuse the kernel as to which pages
-# to reclaim. This also activates some old kernel code that may not have been
-# used in your environment before, and which mucks with page flags: I'd guess
-# there is a risk of an undiscovered kernel panic (the Linux mm community
-# should know whether my guess is justified or not, if you want an expert
-# opinion). Test in a lab environment for your kernel versions, and consider
-# this experimental: use at your on risk.
+# WARNING: This tool uses /proc/PID/clear_refs and /proc/PID/smaps, which can
+# cause slightly higher application latency while the kernel walks process page
+# structures. For large processes (> 100 Gbytes) this duration of slightly
+# higher latency can last over 1 second (the system time of this tool). This
+# also resets the referenced flag, which might confuse the kernel as to which
+# pages to reclaim, especially if swapping is active. This also activates some
+# old kernel code that may not have been used in your environment before, and
+# which modifies page flags: I'd guess there is a risk of an undiscovered
+# kernel panic (the Linux mm community may be able to say how real this risk
+# is). Test in a lab environment for your kernel versions, and consider this
+# experimental: use at your on risk.
 #
 # Copyright 2018 Netflix, Inc.
 # Licensed under the Apache License, Version 2.0 (the "License")
@@ -115,6 +122,7 @@ my $time = 0;
 my $firstreset = 0;
 
 while (1) {
+	# reset referenced flags
 	if (not $firstreset or $snapshot != -1) {
 		open CLEAR, ">$clear_ref" or die "ERROR: can't open $clear_ref (older kernel?): $!";
 		print CLEAR "1";
@@ -122,6 +130,7 @@ while (1) {
 		$firstreset = 1;
 	}
 
+	# pause
 	my $sleep = $duration;
 	if ($profile) {
 		$sleep = shift @profilesecs;
@@ -130,9 +139,13 @@ while (1) {
 	select(undef, undef, undef, $sleep);
 	$time += $duration;
 
+	# read referenced counts
 	$rss = $pss = $referenced = 0;
 	open SMAPS, $smaps or die "ERROR: can't open $smaps: $!";
-	while (my $line = <SMAPS>) {
+	# slurp smaps quickly to minimize unwanted WSS growth during reading:
+	my @smaps = <SMAPS>;
+	close SMAPS;
+	foreach my $line (@smaps) {
 		if ($line =~ /^Rss:/) {
 			$metric = \$rss;
 		} elsif ($line =~ /^Pss:/) {
@@ -146,8 +159,8 @@ while (1) {
 		my ($junk1, $kbytes, $junk2) = split ' ', $line;
 		$$metric += $kbytes;
 	}
-	close SMAPS;
 
+	# output
 	printf "%-8.3f ", $sleep if $profile;
 	printf "%10.2f %10.2f %10.2f\n", $rss / 1024, $pss / 1024, $referenced / 1024;
 

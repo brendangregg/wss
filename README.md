@@ -43,14 +43,14 @@ USAGE: wss [options] PID duration(s)
 
 WARNINGs:
 
-This tool uses /proc/PID/clear_refs and /proc/PID/smaps, and does
-pause the target process for some milliseconds while address maps are read.
-This can cause a short burst of latency for your application. For processes
-with a lot of RSS (>100 Gbytes), the pause may be 1 second or longer. It also
-resets the referenced flag, which might confuse the kernel as to which pages
-to reclaim. This also activates some old kernel code that may not have been
-used in your environment before, and which mucks with page flags: I'd guess
-there is a risk of an undiscovered kernel panic (the Linux mm community
-should know whether my guess is justified or not, if you want an expert
-opinion). Test in a lab environment for your kernel versions, and consider
-this experimental: use at your on risk.
+This tool uses /proc/PID/clear_refs and /proc/PID/smaps, which can
+cause slightly higher application latency while the kernel walks process page
+structures. For large processes (> 100 Gbytes) this duration of slightly
+higher latency can last over 1 second (the system time of this tool). This
+also resets the referenced flag, which might confuse the kernel as to which
+pages to reclaim, especially if swapping is active. This also activates some
+old kernel code that may not have been used in your environment before, and
+which modifies page flags: I'd guess there is a risk of an undiscovered
+kernel panic (the Linux mm community may be able to say how real this risk
+is). Test in a lab environment for your kernel versions, and consider this
+experimental: use at your on risk.
