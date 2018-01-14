@@ -15,6 +15,8 @@
 #        wss -h		# full USAGE
 #
 # COLUMNS:
+#	- Dur(s):  Duration of measurement (seconds). This can be higher than
+#	           the target duration due to the time to read page maps.
 #	- RSS(MB): Resident Set Size (Mbytes). The main memory size.
 #	- PSS(MB): Proportional Set Size (Mbytes). Accounting for shared pages.
 #	- Ref(MB): Referenced (Mbytes) during the specified duration.
@@ -41,6 +43,7 @@
 
 use strict;
 use Getopt::Long;
+use Time::HiRes;
 $| = 1;
 
 sub usage {
@@ -54,7 +57,7 @@ USAGE: wss [options] PID duration(s)
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
 	wss -C 181 5       # show PID 181 growth every 5 seconds
-	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
+	wss -C -d 10 181 1 # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
 	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
 	wss -P 10 181 0.01 # 10 step power-of-2 profile, starting with 0.01s
@@ -89,10 +92,10 @@ if ($duration < 0.001) {
 }
 my $clear_ref = "/proc/$pid/clear_refs";
 my $smaps = "/proc/$pid/smaps";
-my @profilesecs = ();
+my @profilesecs = ($duration);
 if ($profile) {
 	my $d = $duration;
-	for (my $i = 0; $i < $profile; $i++) {
+	for (my $i = 0; $i < $profile - 1; $i++) {
 		push(@profilesecs, $d);
 		$d *= 2;
 	}
@@ -112,11 +115,11 @@ if ($profile) {
 } else {
 	printf "Watching PID $pid page references during $duration seconds...\n";
 }
-printf "%-8s ", "Dur(s)" if $profile;
-printf "%10s %10s %10s\n", "RSS(MB)", "PSS(MB)", "Ref(MB)";
+printf "%-8s %10s %10s %10s\n", "Dur(s)", "RSS(MB)", "PSS(MB)", "Ref(MB)";
 
 ### main
 my ($rss, $pss, $referenced);
+my ($tsstart, $tsend);
 my $metric;
 my $time = 0;
 my $firstreset = 0;
@@ -126,6 +129,7 @@ while (1) {
 	if (not $firstreset or $snapshot != -1) {
 		open CLEAR, ">$clear_ref" or die "ERROR: can't open $clear_ref (older kernel?): $!";
 		print CLEAR "1";
+		$tsstart = Time::HiRes::gettimeofday();
 		close CLEAR;
 		$firstreset = 1;
 	}
@@ -144,6 +148,7 @@ while (1) {
 	open SMAPS, $smaps or die "ERROR: can't open $smaps: $!";
 	# slurp smaps quickly to minimize unwanted WSS growth during reading:
 	my @smaps = <SMAPS>;
+	$tsend = Time::HiRes::gettimeofday();
 	close SMAPS;
 	foreach my $line (@smaps) {
 		if ($line =~ /^Rss:/) {
@@ -161,8 +166,8 @@ while (1) {
 	}
 
 	# output
-	printf "%-8.3f ", $sleep if $profile;
-	printf "%10.2f %10.2f %10.2f\n", $rss / 1024, $pss / 1024, $referenced / 1024;
+	printf "%-8.3f %10.2f %10.2f %10.2f\n", $tsend - $tsstart,
+	    $rss / 1024, $pss / 1024, $referenced / 1024;
 
 	if ($snapshot != -1) {
 		select(undef, undef, undef, $snapshot);

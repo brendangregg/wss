@@ -7,16 +7,17 @@ These are experimental tools for doing working set size estimation, using differ
 This tool resets the PG\_referenced page flags via /proc/PID/clear\_refs, then checks referenced memory after a duration. Eg:
 
 <pre>
-# <b>./wss.pl 5922 0.01</b>
-Watching PID 5922 page references during 0.01 seconds...
-   RSS(MB)    PSS(MB)    Ref(MB)
-    101.07     100.10       5.11
+# <b>./wss.pl 18551 0.01</b>
+Watching PID 18551 page references during 0.01 seconds...
+Dur(s)      RSS(MB)    PSS(MB)    Ref(MB)
+0.010        201.11     200.10       8.03
 </pre>
 
-The output shows that the process had 101 Mbytes of RSS (main memory), and during 0.01 seconds only 5.11 Mbytes (worth of pages) was touched (read/written).
+The output shows that the process had 101 Mbytes of RSS (main memory), and during 0.01 seconds only 8.03 Mbytes (worth of pages) was touched (read/written).
 
 Columns:
 
+- `Dur(s)`:  Duration of measurement (seconds). This can be higher than the target duration due to the time to read page maps.
 - `RSS(MB)`: Resident Set Size (Mbytes). The main memory size.
 - `PSS(MB)`: Proportional Set Size (Mbytes). Accounting for shared pages.
 - `Ref(MB)`: Referenced (Mbytes) during the specified duration. This is the working set size metric.
@@ -35,7 +36,7 @@ USAGE: wss [options] PID duration(s)
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
 	wss -C 181 5       # show PID 181 growth every 5 seconds
-	wss -Cd 10 181 1   # PID 181 growth each second for 10 seconds total
+	wss -C -d 10 181 1 # PID 181 growth each second for 10 seconds total
 	wss -s 1 181 0.01  # show a 10 ms WSS snapshot every 1 second
 	wss -s 0 181 1     # measure WSS every 1 second (not cumulative)
 	wss -P 10 181 0.01 # 10 step power-of-2 profile, starting with 0.01s
