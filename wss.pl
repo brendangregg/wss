@@ -227,7 +227,7 @@ while (1) {
 	my @smaps = <SMAPS>;
 	$ts5 = Time::HiRes::gettimeofday();
 	close SMAPS;
-	kill -CONT, $pid if $snapshot != -1;	# it should continue for now
+	kill -CONT, $pid if ($pausetarget and $snapshot != -1);
 	foreach my $line (@smaps) {
 		if ($line =~ /^Rss:/) {
 			$metric = \$rss;
