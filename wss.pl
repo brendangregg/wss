@@ -30,7 +30,7 @@
 #
 # WARNING: This tool uses /proc/PID/clear_refs and /proc/PID/smaps, which can
 # cause slightly higher application latency while the kernel walks process page
-# structures. For large processes (> 100 Gbytes) this duration of slightly
+# structures. For large processes (> 100 Gbytes) this overhead duration of
 # higher latency can last over 1 second (the system time of this tool). This
 # also resets the referenced flag, which might confuse the kernel as to which
 # pages to reclaim, especially if swapping is active. This also activates some
