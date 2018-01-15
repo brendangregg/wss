@@ -7,31 +7,33 @@ These are experimental tools for doing working set size estimation, using differ
 This tool resets the PG\_referenced page flags via /proc/PID/clear\_refs, then checks referenced memory after a duration. Eg:
 
 <pre>
-# <b>./wss.pl 18551 0.01</b>
-Watching PID 18551 page references during 0.01 seconds...
-Dur(s)      RSS(MB)    PSS(MB)    Ref(MB)
-0.010        201.11     200.10       8.03
+# <b>./wss.pl 23593 0.1</b>
+Watching PID 23593 page references during 0.1 seconds...
+Est(s)     RSS(MB)    PSS(MB)    Ref(MB)
+0.100       201.18     200.10      10.41
 </pre>
 
-The output shows that the process had 101 Mbytes of RSS (main memory), and during 0.01 seconds only 8.03 Mbytes (worth of pages) was touched (read/written).
+The output shows that the process had 201 Mbytes of RSS (main memory), and during 0.1 seconds only 10.41 Mbytes (worth of pages) was touched (read/written).
 
 Columns:
 
-- `Dur(s)`:  Duration of measurement (seconds). This can be higher than the target duration due to the time to read page maps.
+- `Est(s)`:  Estimated WSS measurement duration: this accounts for delays with setting and reading pagemap data, which inflates the intended sleep duration.
 - `RSS(MB)`: Resident Set Size (Mbytes). The main memory size.
 - `PSS(MB)`: Proportional Set Size (Mbytes). Accounting for shared pages.
 - `Ref(MB)`: Referenced (Mbytes) during the specified duration. This is the working set size metric.
+- `Dur(s)`:  Full duration of measurement (seconds), from beginning to set page flags to completing reading them.
+- `Slp(s)`:  Total sleep time.
 
 USAGE:
 
 <pre>
 # <b>./wss.pl -h</b>
-Unknown option: h
 USAGE: wss [options] PID duration(s)
 	-C         # show cumulative output every duration(s)
 	-s secs    # take duration(s) snapshots after secs pauses
 	-d secs    # total duration of measuremnt (for -s or -C)
 	-P steps   # profile run (cumulative), from duration(s)
+	-t         # show additional timestamp columns
    eg,
 	wss 181 0.01       # measure PID 181 WSS for 10 milliseconds
 	wss 181 5          # measure PID 181 WSS for 5 seconds (same overhead)
