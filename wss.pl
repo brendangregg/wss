@@ -42,7 +42,7 @@
 #
 # About the duration columns: here's how you think this tool should work:
 #
-#	1. reset refenced page flags for a process (instantaneous)
+#	1. reset referenced page flags for a process (instantaneous)
 #	2. sleep for the duration
 #	3. read referenced page flags (instantaneous)
 #
@@ -59,7 +59,7 @@
 # So we get our WSS page count, but does it reflect just the sleep duration?
 # No, the working set is being touched during stages 2 and 6, which inflate
 # the sleep duration. Those stages for large processes (>100 Gbytes) can take
-# over 500 ms of CPU time, and so a 10 ms target dration can really be
+# over 500 ms of CPU time, and so a 10 ms target duration can really be
 # reflecting 100s of ms of memory changes.
 #
 # To inform the end user of this duration inflation, this tool provides an
@@ -67,12 +67,12 @@
 # stage 6. For small processes, this estimated duration will likely equal the
 # intended duration. But for large processes, it will show the inflated time.
 #
-# There is also an expermental, undocumented (in USAGE), and dangerous option
+# There is also an experimental, undocumented (in USAGE), and dangerous option
 # for dealing with the duration inflation in a different way: --pausetarget,
 # which will pause the target process (SIGSTOP) and only let it run for the
 # duration of the measurements (using: SIGCONT -> measure -> SIGSTOP). Large
 # processes (> 100 Gbytes) could be paused for 1 second or longer, creating
-# severe application lateny. This option is deactivated in the code, and
+# severe application latency. This option is deactivated in the code, and
 # only exists for experimentation in a lab environment.
 #
 # Copyright 2018 Netflix, Inc.
