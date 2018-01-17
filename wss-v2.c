@@ -2,12 +2,12 @@
  * wss-v2.c	Estimate the working set size (WSS) for a process on Linux.
  *		Version 2: suited for large processes.
  *
- * This is a proof of concept that uses idle page tracking from Linux 4.3+.
- * This version snapshots the entire system's idle page flags, which is
- * efficient for analyzing large processes, but not tiny processes. For those,
- * see wss-v1.c. There is also wss.pl, which uses can be over 10x faster and
- * works on older Linux, however, uses the referenced page flag and has its
- * own caveats. These tools can be found here:
+ * This is a proof of concept that uses idle page tracking from Linux 4.3+, for
+ * a page-based WSS estimation. This version snapshots the entire system's idle
+ * page flags, which is efficient for analyzing large processes, but not tiny
+ * processes. For those, see wss-v1.c. There is also wss.pl, which uses can be
+ * over 10x faster and works on older Linux, however, uses the referenced page
+ * flag and has its own caveats. These tools can be found here:
  *
  * http://www.brendangregg.com/wss.pl
  *

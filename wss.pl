@@ -3,9 +3,10 @@
 # wss.pl	Estimate the working set size (WSS) for a process on Linux.
 #
 # This uses /proc/PID/clear_refs and works on older Linux's (2.6.22+),
-# however, comes with warnings below. See its companion tool, wss.c, which uses
-# the newer idle page tracking from Linux 4.3+, however, is currently
-# prohibitively slow (as described in that tool).
+# however, comes with warnings below. See its companion tools, wss-v1.c and
+# wss-v2.c, which uses # the newer idle page tracking from Linux 4.3+, however,
+# they are much slower to run (as described in the tools). The WSS measured
+# here is page-based.
 #
 # http://www.brendangregg.com/wss.pl
 #
