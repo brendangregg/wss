@@ -306,14 +306,14 @@ int main(int argc, char *argv[])
 		printf("read time : %.3f s\n", (double)read_us / 1000000);
 		printf("dur time  : %.3f s\n", (double)dur_us / 1000000);
 		// assume getpagesize() sized pages:
-		printf("referenced: %d pages, %d Kbytes\n", g_activepages,
-		    g_activepages * getpagesize());
-		printf("walked    : %d pages, %d Kbytes\n", g_walkedpages,
-		    g_walkedpages * getpagesize());
+		printf("referenced: %d pages, %lli Kbytes\n", g_activepages,
+		    (long long int)g_activepages * getpagesize());
+		printf("walked    : %d pages, %lli Kbytes\n", g_walkedpages,
+		    (long long int)g_walkedpages * getpagesize());
 	}
 
 	// assume getpagesize() sized pages:
-	mbytes = (g_activepages * getpagesize()) / (1024 * 1024);
+	mbytes = ((long long)g_activepages * getpagesize()) / (1024 * 1024);
 	printf("%-7s %10s\n", "Est(s)", "Ref(MB)");
 	printf("%-7.3f %10.2f", (double)est_us / 1000000, mbytes);
 
