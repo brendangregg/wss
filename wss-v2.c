@@ -143,8 +143,8 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
 			continue;
 
 		// read idle bit
-		idlemapp = (pfn / 64) * BITMAP_CHUNK_SIZE;
-		if (idlemapp > g_idlebufsize) {
+		idlemapp = (pfn / 64);
+		if ((idlemapp * sizeof(*g_idlebuf)) > g_idlebufsize) {
 			printf("ERROR: bad PFN read from page map.\n");
 			err = 1;
 			goto out;
