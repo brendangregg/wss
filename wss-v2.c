@@ -245,7 +245,9 @@ int loadidlemap()
 	p = g_idlebuf;
 	// unfortunately, larger reads do not seem supported
 	while ((len = read(idlefd, p, IDLEMAP_CHUNK_SIZE)) > 0) {
-		p += IDLEMAP_CHUNK_SIZE;
+		// We'v read IDLEMAP_CHUNK_SIZE *bytes*; adding to a pointer increments the address
+		// by the value added multiplied by the size of the data being pointed to.
+		p += IDLEMAP_CHUNK_SIZE / sizeof(*p);
 		g_idlebufsize += len;
 	}
 	close(idlefd);
