@@ -320,7 +320,8 @@ int main(int argc, char *argv[])
 	time(&initial_time);
 
 	// create log directory here.
-	sprintf(g_loggingbasepath, "/tmp/wss/%d/", pid);
+	mkdir("/tmp/wss/", 0777);
+	sprintf(g_loggingbasepath, "/tmp/wss/%d", pid);
 	mkdir(g_loggingbasepath, 0777);
 	sprintf(g_loggingbasepath, "%s/%li", g_loggingbasepath, initial_time);
 	mkdir(g_loggingbasepath, 0777);
