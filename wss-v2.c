@@ -43,6 +43,7 @@
  *
  */
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/user.h>
@@ -50,6 +51,8 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#include <time.h>
+#include <sys/mman.h>
 
 // see Documentation/vm/pagemap.txt:
 #define PFN_MASK		(~(0x1ffLLU << 55))
@@ -79,6 +82,7 @@ int g_walkedpages = 0;
 char *g_idlepath = "/sys/kernel/mm/page_idle/bitmap";
 unsigned long long *g_idlebuf;
 unsigned long long g_idlebufsize;
+char g_loggingbasepath[PATHSIZE];
 
 /*
  * This code must operate on bits in the pageidle bitmap and process pagemap.
@@ -99,6 +103,11 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
 	unsigned long long *pagebuf, *p;
 	unsigned long long pagebufsize;
 	ssize_t len;
+	int loggingfd;
+	char loggingpath[PATHSIZE];
+	char *loggingbuf;
+	unsigned long long loggingbufsize;
+	int res;
 	
 	// XXX: handle huge pages
 	pagesize = getpagesize();
@@ -118,6 +127,35 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
 	if ((pagefd = open(pagepath, O_RDONLY)) < 0) {
 		perror("Can't read pagemap file");
 		return 2;
+	}
+
+	// Create a log file and mmap it.
+	sprintf(loggingpath, "%s/0x%llx", g_loggingbasepath, mapstart);
+	// https://www.linuxquestions.org/questions/programming-9/mmap-tutorial-c-c-511265/
+	loggingfd = open(loggingpath, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0666);
+	if (loggingfd == -1) {
+		printf("Failed to open file\n");
+		goto out;
+	}
+	// one bit per page
+	loggingbufsize = (pagebufsize / (PAGEMAP_CHUNK_SIZE * 8)) + (pagebufsize % (PAGEMAP_CHUNK_SIZE * 8) != 0);
+	res = lseek(loggingfd, loggingbufsize, SEEK_SET);
+	if (res == -1) {
+		printf("Failed to seek file\n");
+		err = 1;
+		goto out;
+	}
+	res = write(loggingfd, "", 1);
+	if (res == -1) {
+		printf("Failed to write to loggingfd\n");
+		err = 1;
+		goto out;
+	}
+	loggingbuf = mmap(NULL, loggingbufsize, PROT_READ | PROT_WRITE, MAP_SHARED, loggingfd, 0);
+	if(loggingbuf == (void *) -1) {
+		printf("Loggingbuf errno: %i\n", errno);
+		err = 1;
+		goto out;
 	}
 
 	// cache pagemap to get PFN, then operate on PFN from idlemap
@@ -157,13 +195,15 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
 
 		if (!(idlebits & (1ULL << (pfn % 64)))) {
 			g_activepages++;
+			loggingbuf[i / 8] |= 1 << (i % 8);
 		}
 		g_walkedpages++;
 	}
 
 out:
 	close(pagefd);
-
+	munmap(loggingbuf, loggingbufsize);
+	close(loggingfd);
 	return err;
 }
 
@@ -261,6 +301,7 @@ int main(int argc, char *argv[])
 	double duration, mbytes;
 	static struct timeval ts1, ts2, ts3, ts4;
 	unsigned long long set_us, read_us, dur_us, slp_us, est_us;
+	time_t initial_time;
 
 	// options
 	if (argc < 3) {
@@ -275,6 +316,15 @@ int main(int argc, char *argv[])
 	}
 	printf("Watching PID %d page references during %.2f seconds...\n",
 	    pid, duration);
+
+	time(&initial_time);
+
+	// create log directory here.
+	sprintf(g_loggingbasepath, "/tmp/wss/%d/", pid);
+	mkdir(g_loggingbasepath, 0777);
+	sprintf(g_loggingbasepath, "%s/%li", g_loggingbasepath, initial_time);
+	mkdir(g_loggingbasepath, 0777);
+	printf("Logging dir: %s\n", g_loggingbasepath);
 
 	// set idle flags
 	gettimeofday(&ts1, NULL);
