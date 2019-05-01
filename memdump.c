@@ -13,12 +13,73 @@
 #include <fcntl.h>
 #include <math.h>
 #include <errno.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
 
 #define BASE_PATH "/tmp/raw-mem"
 #define PAGE_SIZE 4096
 #define PATHSIZE   128
 
-void dump_memory(pid_t pid, uint64_t target_address, uint64_t size) {
+void dump_pages(int memfd, char *base_path, uint64_t addr, uint64_t page_offset, uint64_t pages) {
+    char out_path[PATHSIZE];
+    void *mem_data = malloc(pages * PAGE_SIZE);
+    int out_fd;
+
+    sprintf(out_path, "%s/0x%lx:%lu:%lu.mem", base_path, addr, page_offset, pages);
+    out_fd = open(out_path, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0666);
+
+    if(lseek(memfd, addr + (page_offset * PAGE_SIZE), SEEK_SET) < 0) {
+        printf("Failed to seek to %lu\n", addr + (page_offset * PAGE_SIZE));
+        exit(1);
+    }
+    printf("Writing %lu bytes to %s\n", 4096UL * pages, out_path);
+    if(read(memfd, mem_data, pages * PAGE_SIZE) != pages * PAGE_SIZE) {
+        printf("Didn't read enought data...\n");
+        exit(1);
+    }
+
+    write(out_fd, mem_data, pages * PAGE_SIZE);
+    close(out_fd);
+    free(mem_data);
+}
+
+// Find contiguous offsets.
+// For each offset block create file "a-b.mem"
+void dump_memory(pid_t pid, uint64_t base_addr, uint64_t *offsets, uint64_t offsets_size) {
+    uint64_t offset;
+    char mem_path[PATHSIZE];
+    int mem_fd;
+    char addr_path[PATHSIZE];
+    uint64_t block_start;
+    uint64_t block_size = 0;
+    
+    
+    sprintf(addr_path, "%s/%i", BASE_PATH, pid);
+    mkdir(addr_path, 0777);
+
+    sprintf(mem_path, "/proc/%d/mem", pid);
+
+    mem_fd = open(mem_path, O_RDONLY);
+
+    ptrace(PTRACE_ATTACH, pid, NULL, NULL);
+    waitpid(pid, NULL, 0);
+
+    for(offset = 0; offset < offsets_size; ++offset) {
+        if(block_size == 0) { // start a new block
+            block_start = offsets[offset];
+            block_size = 1;
+        }
+        if (offset == (offsets_size - 1) // am I the last one?
+                // or am I the start of a new block?
+                || offsets[offset + 1] > (block_start + block_size)) {
+            dump_pages(mem_fd, addr_path, base_addr, block_start, block_size);
+            block_size = 0;
+        } else {
+            block_size += 1;
+        }
+    }
+
+    ptrace(PTRACE_DETACH, pid, NULL, NULL);
     //char output_path[100];
     //int output_fd;
 
@@ -29,8 +90,6 @@ void get_largest_memory_block(pid_t pid, uint64_t *address, uint64_t *size) {
     char mapspath[PATHSIZE];
     char line[500];
     uint64_t mapstart, mapend;
-
-    printf("Found biggest memory section 0x%lx with size %lu\n", *address, *size);
 
     // read virtual mappings
     if (sprintf(mapspath, "/proc/%d/maps", pid) < 0) {
@@ -97,7 +156,6 @@ int main(int argc, char **argv) {
     uint64_t target_size = 0;
     uint64_t *valid_pages_arr;
     uint64_t valid_pages_count;
-    uint64_t i;
     //int fd;
     pid_t pid;
 
@@ -111,9 +169,7 @@ int main(int argc, char **argv) {
     printf("Found biggest memory section 0x%lx with size %lu\n", target_address, target_size);
     valid_pages_count = valid_pages(pid, target_address, target_size, &valid_pages_arr);
     printf("Process has %lu valid pages.\n", valid_pages_count);
-    for(i = 0; i < valid_pages_count; ++i) {
-        printf("Valid offset: %lu\n", valid_pages_arr[i]);
-    }
+    dump_memory(pid, target_address, valid_pages_arr, valid_pages_count);
 
     // TODO: pause tracee using ptrace
 
