@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
+#include <sys/param.h>
 
 #define BASE_PATH "/tmp/raw-mem"
 #define PAGE_SIZE 4096
@@ -24,6 +25,7 @@ void dump_pages(int memfd, char *base_path, uint64_t addr, uint64_t page_offset,
     char out_path[PATHSIZE];
     void *mem_data = malloc(pages * PAGE_SIZE);
     int out_fd;
+    uint64_t io_bytes = 0;
 
     sprintf(out_path, "%s/0x%lx:%lu:%lu.mem", base_path, addr, page_offset, pages);
     out_fd = open(out_path, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0666);
@@ -33,12 +35,16 @@ void dump_pages(int memfd, char *base_path, uint64_t addr, uint64_t page_offset,
         exit(1);
     }
     printf("Writing %lu bytes to %s\n", 4096UL * pages, out_path);
-    if(read(memfd, mem_data, pages * PAGE_SIZE) != pages * PAGE_SIZE) {
-        printf("Didn't read enought data...\n");
-        exit(1);
+    while(io_bytes < pages * PAGE_SIZE) {
+        io_bytes += read(memfd, mem_data, MIN((pages * PAGE_SIZE) - io_bytes, SSIZE_MAX));
+        printf("Read IO bytes: %lu\n", io_bytes);
     }
 
-    write(out_fd, mem_data, pages * PAGE_SIZE);
+    io_bytes = 0;
+    while(io_bytes < pages * PAGE_SIZE) {
+        io_bytes += write(out_fd, mem_data, MIN((pages * PAGE_SIZE) - io_bytes, SSIZE_MAX));
+        printf("Wrote IO bytes: %lu\n", io_bytes);
+    }
     close(out_fd);
     free(mem_data);
 }
@@ -80,8 +86,6 @@ void dump_memory(pid_t pid, uint64_t base_addr, uint64_t *offsets, uint64_t offs
     }
 
     ptrace(PTRACE_DETACH, pid, NULL, NULL);
-    //char output_path[100];
-    //int output_fd;
 
 }
 
@@ -170,10 +174,4 @@ int main(int argc, char **argv) {
     valid_pages_count = valid_pages(pid, target_address, target_size, &valid_pages_arr);
     printf("Process has %lu valid pages.\n", valid_pages_count);
     dump_memory(pid, target_address, valid_pages_arr, valid_pages_count);
-
-    // TODO: pause tracee using ptrace
-
-    //get_largest_address_block(pid, &target_address, &target_size);
-    //dump_memory(pid, target_address, target_size);
-    //close(fd);
 }
