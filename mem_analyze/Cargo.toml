@@ -1,0 +1,9 @@
+[package]
+name = "mem_analyze"
+version = "0.1.0"
+authors = ["James Gowans <jgowans@amazon.com>"]
+edition = "2018"
+
+[dependencies]
+ring = "0.14.6"
+twox-hash = "1.2.0"
