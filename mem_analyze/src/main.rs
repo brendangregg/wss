@@ -23,8 +23,6 @@ fn main() -> std::io::Result<()> {
     let mut repeating_pattern_page_count: u64 = 0;
     let mut page_content_counts = HashMap::new();
 
-    //let path = format!("/tmp/raw-mem/{}/0x7f2d67a0c000:0:102400.mem", pid);
-    //let path = format!("/tmp/raw-mem/{}/0x7f00e50cd000:57344:22125.mem", pids[0]);
     let mut paths: Vec<DirEntry> = Vec::new();
     for pid in pids {
         for dir_entry in read_dir(format!("/tmp/raw-mem/{}", pid))? {
@@ -55,7 +53,7 @@ fn main() -> std::io::Result<()> {
     }
     println!("Total pages: {}", total_pages);
     println!("Number of zero pages: {}", zero_page_count);
-    println!("Number of repeating pattern pages: {}", repeating_pattern_page_count);
+    println!("Number of repeating pattern pages (excl. zero): {}", repeating_pattern_page_count - zero_page_count);
     println!("Occurancs: {:?}", page_content_counts_counts);
     Ok(())
 }
@@ -69,26 +67,10 @@ fn check_zero(data: &[u8]) -> bool {
     true
 }
 
-// There's probably a better way to do this but I'm a rust n00b.
 fn check_repeating_64_bit_pattern(data: &[u8]) -> bool {
-    let mut first_val = 0;
-    for idx in 0..data.len() / 8 {
-        let mut val = 0;
-        val += (data[idx+0] as u64) <<  0;
-        val += (data[idx+1] as u64) <<  8;
-        val += (data[idx+2] as u64) << 16;
-        val += (data[idx+3] as u64) << 24;
-        val += (data[idx+4] as u64) << 32;
-        val += (data[idx+5] as u64) << 40;
-        val += (data[idx+6] as u64) << 48;
-        val += (data[idx+7] as u64) << 56;
-        
-        if idx == 0 {
-            first_val = val;
-        } else {
-            if val != first_val {
-                return false;
-            }
+    for idx in 8..data.len() {
+        if data[idx] != data[idx-8] {
+            return false;
         }
     }
     true
