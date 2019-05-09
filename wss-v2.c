@@ -75,6 +75,13 @@
 #define PAGE_OFFSET		0xffff880000000000LLU
 #endif
 
+#define PG_STATUS_BITS 2
+#define BITS_PER_BYTE 8
+#define PG_STATUS_UNMAPPED 0x0
+#define PG_STATUS_SWAPPED 0x1
+#define PG_STATUS_IDLE 0x2
+#define PG_STATUS_ACCESSED 0x3
+
 // globals
 int g_debug = 0;		// 1 == some, 2 == verbose
 int g_activepages = 0;
@@ -108,6 +115,7 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
     char *loggingbuf;
     unsigned long long loggingbufsize;
     int res;
+    unsigned char page_status;
 
     // XXX: handle huge pages
     pagesize = getpagesize();
@@ -137,8 +145,8 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
         printf("Failed to open file\n");
         goto out;
     }
-    // one bit per page
-    loggingbufsize = (pagebufsize / (PAGEMAP_CHUNK_SIZE * 8)) + (pagebufsize % (PAGEMAP_CHUNK_SIZE * 8) != 0);
+
+    loggingbufsize = (PG_STATUS_BITS * pagebufsize / (PAGEMAP_CHUNK_SIZE * 8)) + (pagebufsize % (PAGEMAP_CHUNK_SIZE * 8) != 0);
     res = lseek(loggingfd, loggingbufsize, SEEK_SET);
     if (res == -1) {
         printf("Failed to seek file\n");
@@ -177,26 +185,33 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
     for (virtual_page_num = 0; virtual_page_num < pagebufsize / sizeof (unsigned long long); virtual_page_num++) {
         // convert virtual address p to physical PFN
         pfn = p[virtual_page_num] & PFN_MASK;
-        if (pfn == 0)
-            continue;
+        if (pfn == 0) { // "Unmapped pages return a null PFN."
+            page_status = PG_STATUS_UNMAPPED;
+        } else { // it's mapped; whats it up to? (TODO: swapped?)
+            // read idle bit
+            idlemapp = (pfn / 64);
+            if ((idlemapp * sizeof(*g_idlebuf)) > g_idlebufsize) {
+                printf("ERROR: bad PFN read from page map.\n");
+                err = 1;
+                goto out;
+            }
+            idlebits = g_idlebuf[idlemapp];
+            if (g_debug > 1) {
+                printf("R: p %llx pfn %llx idlebits %llx\n",
+                        p[virtual_page_num], pfn, idlebits);
+            }
 
-        // read idle bit
-        idlemapp = (pfn / 64);
-        if ((idlemapp * sizeof(*g_idlebuf)) > g_idlebufsize) {
-            printf("ERROR: bad PFN read from page map.\n");
-            err = 1;
-            goto out;
-        }
-        idlebits = g_idlebuf[idlemapp];
-        if (g_debug > 1) {
-            printf("R: p %llx pfn %llx idlebits %llx\n",
-                    p[virtual_page_num], pfn, idlebits);
+            if (!(idlebits & (1ULL << (pfn % 64)))) {
+                g_activepages++;
+                page_status = PG_STATUS_ACCESSED;
+            } else {
+                page_status = PG_STATUS_IDLE;
+            }
         }
 
-        if (!(idlebits & (1ULL << (pfn % 64)))) {
-            g_activepages++;
-            loggingbuf[virtual_page_num / 8] |= 1 << (virtual_page_num % 8);
-        }
+        loggingbuf[virtual_page_num / (BITS_PER_BYTE / PG_STATUS_BITS)] |=
+            page_status << PG_STATUS_BITS * (virtual_page_num % (BITS_PER_BYTE / PG_STATUS_BITS));
+
         g_walkedpages++;
     }
 
