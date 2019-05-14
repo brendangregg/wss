@@ -1,5 +1,6 @@
 //extern crate data_encoding;
 extern crate ring;
+extern crate mem_analyze;
 
 use std::vec::Vec;
 use std::env;
@@ -13,6 +14,7 @@ use std::hash::Hasher;
 
 const PAGE_SIZE: usize = 4096;
 
+
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
     let pids: Vec<i32> = args[1..].iter().map(|p| p.parse().expect("Can't parse to i32")).collect();
@@ -22,6 +24,12 @@ fn main() -> std::io::Result<()> {
     let mut zero_page_count: u64 = 0;
     let mut repeating_pattern_page_count: u64 = 0;
     let mut page_content_counts = HashMap::new();
+
+
+    let process_memory = mem_analyze::dump::get_memory(pids[0])?;
+    for segment in process_memory.segments {
+        println!("Segment start {:x} with pages {}", segment.virtual_addr_start, segment.pages.len());
+    }
 
     let mut paths: Vec<DirEntry> = Vec::new();
     for pid in pids {
@@ -38,9 +46,10 @@ fn main() -> std::io::Result<()> {
             let page_data = &file_data[(page_number * PAGE_SIZE)..((page_number + 1) * PAGE_SIZE)];
             if check_zero(&page_data) == true {
                 zero_page_count += 1;
-            }
-            if check_repeating_64_bit_pattern(&page_data) {
-                repeating_pattern_page_count += 1;
+            } else {
+                if check_repeating_64_bit_pattern(&page_data) {
+                    repeating_pattern_page_count += 1;
+                }
             }
             let mut hash = DefaultHasher::new();
             page_data.hash(&mut hash);
@@ -53,7 +62,7 @@ fn main() -> std::io::Result<()> {
     }
     println!("Total pages: {}", total_pages);
     println!("Number of zero pages: {}", zero_page_count);
-    println!("Number of repeating pattern pages (excl. zero): {}", repeating_pattern_page_count - zero_page_count);
+    println!("Number of repeating pattern pages (excl. zero): {}", repeating_pattern_page_count);
     println!("Occurancs: {:?}", page_content_counts_counts);
     Ok(())
 }
