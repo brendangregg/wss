@@ -1,8 +1,11 @@
+use std::error;
 use std::fs::File;
 use std::io;
 use std::io::{BufReader, BufRead, Write, Read, Seek, SeekFrom};
 use sysinfo::SystemExt;
 use byteorder::{ByteOrder, LittleEndian};
+use std::{thread, time};
+use chrono::{DateTime, Utc};
 
 // only interested in segments with at least 1000 pages
 const SEGMENT_THRESHOLD: usize = 1000 * 4096;
@@ -18,20 +21,26 @@ const PAGE_SIZE: usize = 4096;
 const IDLE_BITMAP_PATH: &str = "/sys/kernel/mm/page_idle/bitmap";
 
 
-pub fn get_memory(pid: i32) -> Result<super::ProcessMemory, io::Error> {
+pub fn get_memory(pid: i32) -> Result<super::ProcessMemory, std::io::Error> {
     set_idlemap()?;
+    thread::sleep(time::Duration::from_secs(5));
+    // TODO: sleep here
+    let snapshot_time = Utc::now();
     let idlemap = load_idlemap()?;
     let segments: Vec<Segment> = get_segments(pid)?.into_iter()
         .filter(|s| s.start_address < USERSPACE_END && s.size >= SEGMENT_THRESHOLD)
         .collect();
-    let mut process_memory = super::ProcessMemory { segments : Vec::with_capacity(segments.len()) };
+    let mut process_memory = super::ProcessMemory {
+        timestamp: snapshot_time,
+        segments : Vec::with_capacity(segments.len()),
+    };
     let mut total_pages = 0;
     let mut mapped_pages = 0;
     for segment in segments {
         let pagemap: Vec<u64> = get_pagemap(pid, &segment)?;
         println!("Pagemap for segment at {} with size {} has len {}", segment.start_address, segment.size, pagemap.len());
         let mut pages: Vec<super::Page> = Vec::new();
-        for pagemap_word in pagemap {
+        for (page_idx, pagemap_word) in pagemap.iter().enumerate() {
             total_pages += 1;
             // Bits 0-54  page frame number (PFN) if present
             let pfn = pagemap_word & 0x7FFFFFFFFFFFFF;
@@ -44,16 +53,15 @@ pub fn get_memory(pid: i32) -> Result<super::ProcessMemory, io::Error> {
                     page_status = super::PageStatus::Swapped;
 
                 } else {
-                    // TODO: FIX INDEXX!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    if idlemap[0] & 0x69 == 0 {
-                        page_status = super::PageStatus::MappedActive;
+                    if idlemap[pfn as usize / 8] & 1 << pfn % 8 == 0 {
+                        page_status = super::PageStatus::Active;
                     } else {
-                        page_status = super::PageStatus::MappedIdle;
+                        page_status = super::PageStatus::Idle;
                     }
                 }
             }
             pages.push(super::Page {
-                page_status: page_status,
+                status: page_status,
                 data: Vec::new(),
             })
         }
@@ -140,6 +148,6 @@ fn system_ram_pages() -> usize {
 }
 
 fn system_ram_bytes() -> usize {
-    // this seems to take 60 ms. Lots of stat() calls... :'-(
+    // this seems to take 60 ms. :'-(
     sysinfo::System::new().get_total_memory() as usize * 1024
 }
