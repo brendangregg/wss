@@ -14,12 +14,12 @@ use chrono::SecondsFormat;
 
 pub fn write_process_memory(pid: i32, memory: &super::ProcessMemory) -> std::io::Result<()> {
     let base_dir = format!("/tmp/wss/{}/{}", pid, memory.timestamp.to_rfc3339_opts(SecondsFormat::Secs, true));
-    fs::create_dir_all(&base_dir);
+    fs::create_dir_all(&base_dir)?;
 
     for segment in &memory.segments {
         let mut page_summaries: Vec<u8>  = Vec::with_capacity(segment.pages.len());
         for page in &segment.pages {
-            let mut page_summary = 0;
+            let mut page_summary;
             match page.status {
                 super::PageStatus::Unmapped => page_summary = 0,
                 super::PageStatus::Swapped => page_summary = 1,
@@ -32,7 +32,7 @@ pub fn write_process_memory(pid: i32, memory: &super::ProcessMemory) -> std::io:
             page_summaries.push(page_summary);
         }
         let mut file = File::create(format!("{}/0x{:x}", base_dir, segment.virtual_addr_start))?;
-        println!("Opened file: {:?}", file);
+        info!("Persisted process memory metadata to: {:?}", file);
         file.write(&page_summaries)?;
     }
     Ok(())
