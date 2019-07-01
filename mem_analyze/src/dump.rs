@@ -21,6 +21,58 @@ const PAGE_SIZE: usize = 4096;
 // One bit per page; bit number if PFN.
 const IDLE_BITMAP_PATH: &str = "/sys/kernel/mm/page_idle/bitmap";
 
+const KPAGEFLAGS_PATH: &str = "/proc/kpageflags";
+const KPAGEFLAGS_BIT_BUDDY: u8 = 10;
+
+// Without a process ID means get the memory activity for the whole host.
+// Note it doesn't analyze page contents, only type and activity.
+pub fn get_host_memory(sleep: u64) -> Result<super::ProcessMemory, std::io::Error> {
+    set_idlemap()?;
+    //ptrace::cont(nix_pid, None);
+    debug!("Sleeping {} seconds", sleep);
+    thread::sleep(time::Duration::from_secs(sleep));
+    let snapshot_time = Utc::now();
+    //signal::kill(nix_pid, signal::Signal::SIGSTOP);
+    let idlemap = load_idlemap()?;
+    let mut pages: Vec<super::Page> = Vec::new();
+    let mut bit_values: Vec<u64> = vec![0; 64];
+    for (pfn_idx, pfn_word) in get_kpageflags()?.iter().enumerate() {
+        let page_status;
+        if pfn_word & (1 << KPAGEFLAGS_BIT_BUDDY) == 0 {
+            if idlemap[pfn_idx as usize / 8] & 1 << pfn_idx % 8 == 0 {
+                page_status = super::PageStatus::Active;
+            } else {
+                page_status = super::PageStatus::Idle;
+            }
+        } else {
+            page_status = super::PageStatus::Unmapped;
+        }
+        for bit_idx in 0..64 {
+            if pfn_word & (1 << bit_idx) != 0 {
+                bit_values[bit_idx] += 1;
+            }
+        }
+        pages.push(super::Page {
+            status: page_status,
+            data: None,
+        })
+    }
+    for bit_idx in 0..64 {
+        if bit_values[bit_idx] > 0 {
+            debug!("Bit {} occurs {}", bit_idx, bit_values[bit_idx]);
+        }
+    }
+    Ok(super::ProcessMemory {
+        timestamp: snapshot_time,
+        segments: vec![
+            super::VirtualSegment {
+                    virtual_addr_start: 0,
+                    pages: pages,
+            }
+        ],
+
+    })
+}
 
 pub fn get_memory(pid: i32, sleep: u64) -> Result<super::ProcessMemory, std::io::Error> {
     //let nix_pid = Pid::from_raw(pid);
@@ -132,6 +184,17 @@ fn get_pagemap(pid: i32, segment: &Segment) -> std::io::Result<Vec<u64>> {
     LittleEndian::read_u64_into(&pagemap, &mut pagemap_words);
     debug!("Loaded process pagemap in {} ms", (Utc::now() - start_time).num_milliseconds());
     Ok(pagemap_words)
+}
+
+fn get_kpageflags() -> std::io::Result<Vec<u64>> {
+    let start_time = Utc::now();
+    let mut kpageflags: Vec<u8> = Vec::with_capacity(system_ram_pages() * 8);
+    File::open(KPAGEFLAGS_PATH)?.read_to_end(&mut kpageflags)?;
+    let mut kpageflags_words: Vec<u64> = Vec::with_capacity(kpageflags.len() / 8);
+    kpageflags_words.resize(kpageflags.len() / 8, 0);
+    LittleEndian::read_u64_into(&kpageflags, &mut kpageflags_words);
+    debug!("Kpageflags loaded in {} ms", (Utc::now() - start_time).num_milliseconds());
+    Ok(kpageflags_words)
 }
 
 fn get_segments(pid: i32) -> Result<Vec<Segment>, io::Error> {
