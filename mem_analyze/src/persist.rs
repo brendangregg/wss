@@ -12,19 +12,26 @@ use std::fs::File;
 use std::io::Write;
 use chrono::SecondsFormat;
 use std::collections::HashMap;
+use sys_info::hostname;
 
 use rusoto_core::Region;
 use rusoto_s3::S3Client;
 use rusoto_s3::S3;
 use rusoto_s3::PutObjectRequest;
 
-pub fn write_process_memory(pid: i32, memory: &super::ProcessMemory) -> std::io::Result<()> {
+pub fn write_process_memory(pid: i32, region: &str, memory: &super::ProcessMemory) -> std::io::Result<()> {
     let base_dir = format!("/tmp/wss/{}/{}", pid, memory.timestamp.to_rfc3339_opts(SecondsFormat::Secs, true));
     fs::create_dir_all(&base_dir)?;
 
+    let hostname: String = match hostname() {
+        Ok(hostname) => hostname,
+        Err(e) => panic!(e),
+    };
+
     for (segment_start, segment_data) in process_to_page_summary(&memory).into_iter() {
         write_to_file(&base_dir, segment_start, &segment_data)?;
-        write_to_s3(&format!("wss/{}", memory.timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)),
+        write_to_s3(region,
+                    &format!("{}/{}", hostname, memory.timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)),
                     segment_start, segment_data);
     }
     Ok(())
@@ -59,11 +66,10 @@ fn write_to_file(base_dir: &str, segment_start: usize, segment_data: &Vec<u8>) -
     Ok(())
 }
 
-fn write_to_s3(base_key: &str, segment_start: usize, segment_data: Vec<u8>) {
-    let s3client = S3Client::new(Region::EuWest2);
-    match s3client.put_object(PutObjectRequest {
+fn write_to_s3(region_str: &str, base_key: &str, segment_start: usize, segment_data: Vec<u8>) {
+    match S3Client::new(region_rusto(region_str)).put_object(PutObjectRequest {
         body: Some(segment_data.into()),
-        bucket: "jgowans".to_string(),
+        bucket: format!("jgowans-wss-{}", region_str),
         key: format!("{}/0x{:x}", base_key, segment_start),
         ..Default::default()
     }).sync() {
@@ -74,4 +80,13 @@ fn write_to_s3(base_key: &str, segment_start: usize, segment_data: Vec<u8>) {
             error!("PutObject error: {:?}", error);
         }
     }
+}
+
+fn region_rusto(region_str: &str) -> Region {
+    return match region_str {
+        "us-east-1" => Region::UsEast1,
+        "eu-west-2" => Region::EuWest2,
+        "sa-east-1" => Region::SaEast1,
+        _ => panic!("Invalid region: {}", region_str),
+    };
 }
