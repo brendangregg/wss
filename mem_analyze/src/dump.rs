@@ -34,43 +34,18 @@ pub fn get_host_memory(sleep: u64) -> Result<super::ProcessMemory, std::io::Erro
     let snapshot_time = Utc::now();
     //signal::kill(nix_pid, signal::Signal::SIGSTOP);
     let idlemap = load_idlemap()?;
-    let mut pages: Vec<super::Page> = Vec::new();
-    let mut bit_values: Vec<u64> = vec![0; 64];
-    for (pfn_idx, pfn_word) in get_kpageflags()?.iter().enumerate() {
-        let page_status;
-        if pfn_word & (1 << KPAGEFLAGS_BIT_BUDDY) == 0 {
-            if idlemap[pfn_idx as usize / 8] & 1 << pfn_idx % 8 == 0 {
-                page_status = super::PageStatus::Active;
-            } else {
-                page_status = super::PageStatus::Idle;
-            }
-        } else {
-            page_status = super::PageStatus::Unmapped;
-        }
-        for bit_idx in 0..64 {
-            if pfn_word & (1 << bit_idx) != 0 {
-                bit_values[bit_idx] += 1;
-            }
-        }
-        pages.push(super::Page {
-            status: page_status,
-            data: None,
-        })
-    }
-    for bit_idx in 0..64 {
-        if bit_values[bit_idx] > 0 {
-            debug!("Bit {} occurs {}", bit_idx, bit_values[bit_idx]);
-        }
-    }
     Ok(super::ProcessMemory {
         timestamp: snapshot_time,
         segments: vec![
-            super::VirtualSegment {
-                    virtual_addr_start: 0,
-                    pages: pages,
+            super::Segment {
+                addr_start: 0,
+                page_flags: get_kpageflags()?.into_iter().enumerate().map(|(pfn_idx, pfn_flags)| {
+                    let active_page_add = get_active_add(pfn_idx as u64, &idlemap);
+                    (pfn_flags & !(1 << super::ACTIVE_PAGE_BIT))
+                        + active_page_add
+                }).collect(),
             }
-        ],
-
+        ]
     })
 }
 
@@ -101,53 +76,55 @@ pub fn get_memory(pid: i32, sleep: u64) -> Result<super::ProcessMemory, std::io:
         //let all_page_data = get_page_content(pid, segment.start_address)?;
         let mut data_slice: Option<Vec<u8>> = None;
         let mut data_slice_offset = 0;
-        let mut pages: Vec<super::Page> = Vec::new();
-        for (page_idx, pagemap_word) in pagemap.iter().enumerate() {
-            let page_status: super::PageStatus;
-            let page_data: Option<Vec<u8>>;
+        let page_flags: Vec<u64> = pagemap.iter().enumerate().map(|(page_idx, pagemap_word)|
             if pagemap_word & 1 << 63 == 0 {
-                page_status = super::PageStatus::Unmapped;
-                page_data = None;
                 data_slice = None; //end of contiguous; clear for next mapped page.
+                return pagemap_word.clone();
             } else {
                 if pagemap_word & 1 << 62 != 0 {
-                    page_status = super::PageStatus::Swapped;
-                    page_data = None;
                     data_slice = None; //end of contiguous; clear for next mapped page.
+                    return pagemap_word.clone();
 
                 } else {
                     if data_slice == None {
                         let page_range = contiguous_mapped_length(&pagemap[page_idx..]);
                         assert!(page_range > 0); // debugging; remove once happy with algorithm.
                         data_slice_offset = 0;
-                        data_slice = Some(get_page_content(pid, segment.start_address + (page_idx * PAGE_SIZE), page_range)?);
+                        data_slice = Some(get_page_content(pid, segment.start_address + (page_idx * PAGE_SIZE), page_range).unwrap());
                     }
-                    // Bits 0-54  page frame number (PFN) if present
-                    let pfn = pagemap_word & 0x7FFFFFFFFFFFFF;
-                    if idlemap[pfn as usize / 8] & 1 << pfn % 8 == 0 {
-                        page_status = super::PageStatus::Active;
-                    } else {
-                        page_status = super::PageStatus::Idle;
-                    }
-                    page_data = Some(match data_slice {
+                    let page_data = match data_slice {
                         None => panic!("We were supposed to pre-read this but didn't...."),
                         Some(ref data_slice) => data_slice[(data_slice_offset* PAGE_SIZE)..((data_slice_offset+1) * PAGE_SIZE)].to_vec(),
-                    });
+                    };
                     data_slice_offset += 1;
+
+                    let zero_page_add: u64 = match page_data.iter().all(|&x| x == 0) {
+                        true => 1 << super::ZERO_PAGE_BIT,
+                        false => 0,
+                    };
+
+                    // Bits 0-54  page frame number (PFN) if present
+                    let active_page_add = get_active_add(pagemap_word & 0x7FFFFFFFFFFFFF, &idlemap);
+                    // Zero the PFN; were going to use it to store other data resembling kpageflags
+                    return (pagemap_word & !0x7FFFFFFFFFFFFF)
+                            + zero_page_add + active_page_add;
                 }
             }
-            pages.push(super::Page {
-                status: page_status,
-                data: page_data,
-            })
-        }
-        process_memory.segments.push(super::VirtualSegment {
-            virtual_addr_start: segment.start_address,
-            pages: pages,
+        ).collect();
+        process_memory.segments.push(super::Segment {
+            addr_start: segment.start_address,
+            page_flags: page_flags,
         });
     }
     debug!("Finished dumping segments in {} ms", (Utc::now() - start_time).num_milliseconds());
     Ok(process_memory)
+}
+
+fn get_active_add(pfn: u64, idlemap: &[u8]) -> u64 {
+    return match idlemap[pfn as usize / 8] & 1 << pfn % 8 == 0 {
+        true => 1 << super::ACTIVE_PAGE_BIT,
+        false => 0,
+    };
 }
 
 // Given an array slice of pagemap entries, where the starting element is a resident entry,

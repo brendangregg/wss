@@ -13,58 +13,22 @@ pub mod persist;
 
 use chrono::{DateTime, Utc};
 
+// https://www.kernel.org/doc/Documentation/vm/pagemap.txt
+// We're going to steal bits from the PFN (0-54) of the /proc/pid/pagemap,
+// while using the same bits of /proc/kpageflags
+pub const ZERO_PAGE_BIT: u8 = 24;
+pub const ACTIVE_PAGE_BIT: u8 = 27;
+
 pub struct ProcessMemory {
     pub timestamp: DateTime<Utc>,
     // virtual mem start to vector of page data
-    pub segments: Vec<VirtualSegment>,
+    pub segments: Vec<Segment>,
 }
 
 
-pub struct VirtualSegment {
-    pub virtual_addr_start: usize,
-    pub pages: Vec<Page>
+pub struct Segment {
+    pub addr_start: usize,
+    // For now these flags are just what we get back from /proc/pid/pagemap
+    // OR /proc/kpageflags. We may want to standardize bits at some point...
+    pub page_flags: Vec<u64>
 }
-
-pub struct Page {
-    pub status: PageStatus,
-    pub data: Option<Vec<u8>>,
-}
-
-impl Page {
-    pub fn is_zero(&self) -> bool {
-        match self.data {
-            None => return false,
-            Some(ref data) => {
-                for byte in data {
-                    if *byte != 0 {
-                        return false
-                    }
-                }
-                return true
-            }
-        }
-    }
-
-    fn repeating_64_bit_pattern(&self) -> bool {
-        match self.data {
-            None => return false,
-            Some(ref data) => {
-                for idx in 8..data.len() {
-                    if data[idx] != data[idx-8] {
-                        return false;
-                    }
-                }
-                return true
-            }
-        }
-    }
-}
-
-#[derive(PartialEq)]
-pub enum PageStatus {
-    Unmapped,
-    Swapped,
-    Idle,
-    Active
-}
-

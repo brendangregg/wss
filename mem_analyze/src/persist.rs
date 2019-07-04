@@ -13,6 +13,7 @@ use std::io::Write;
 use chrono::SecondsFormat;
 use std::collections::HashMap;
 use sys_info::hostname;
+use byteorder::{ByteOrder, LittleEndian};
 
 use rusoto_core::Region;
 use rusoto_s3::S3Client;
@@ -40,21 +41,10 @@ pub fn write_process_memory(pid: i32, region: &str, memory: &super::ProcessMemor
 fn process_to_page_summary(memory: &super::ProcessMemory) -> HashMap<usize, Vec<u8>> {
     let mut segment_data = HashMap::new();
     for segment in &memory.segments {
-        let mut page_summaries: Vec<u8>  = Vec::with_capacity(segment.pages.len());
-        for page in &segment.pages {
-            let mut page_summary;
-            match page.status {
-                super::PageStatus::Unmapped => page_summary = 0,
-                super::PageStatus::Swapped => page_summary = 1,
-                super::PageStatus::Idle => page_summary = 2,
-                super::PageStatus::Active => page_summary = 3
-            }
-            if page.is_zero() {
-                page_summary += 1 << 2;
-            }
-            page_summaries.push(page_summary);
-        }
-        segment_data.insert(segment.virtual_addr_start, page_summaries);
+        let mut page_summaries: Vec<u8>  = Vec::with_capacity(8 * segment.page_flags.len());
+        page_summaries.resize(8 * segment.page_flags.len(), 0);
+        LittleEndian::write_u64_into(&segment.page_flags, &mut page_summaries);
+        segment_data.insert(segment.addr_start, page_summaries);
     }
     return segment_data;
 }
