@@ -26,7 +26,7 @@ const KPAGEFLAGS_BIT_BUDDY: u8 = 10;
 
 // Without a process ID means get the memory activity for the whole host.
 // Note it doesn't analyze page contents, only type and activity.
-pub fn get_host_memory(sleep: u64) -> Result<super::ProcessMemory, std::io::Error> {
+pub fn get_host_memory(sleep: u64, inspect_ram: bool) -> Result<super::ProcessMemory, std::io::Error> {
     set_idlemap()?;
     //ptrace::cont(nix_pid, None);
     debug!("Sleeping {} seconds", sleep);
@@ -41,8 +41,19 @@ pub fn get_host_memory(sleep: u64) -> Result<super::ProcessMemory, std::io::Erro
                 addr_start: 0,
                 page_flags: get_kpageflags()?.into_iter().enumerate().map(|(pfn_idx, pfn_flags)| {
                     let active_page_add = get_active_add(pfn_idx as u64, &idlemap);
+                    let zero_page_add: u64 = match inspect_ram {
+                        true => match get_pfn_content(pfn_idx) {
+                            Ok(content) => match content.iter().all(|&x| x == 0) {
+                                true => 1 << super::ZERO_PAGE_BIT,
+                                false => 0,
+                            },
+                            Err(e) => panic!("Got error: {:?}", e),
+                        },
+                        false => 0
+                    };
                     (pfn_flags & !(1 << super::ACTIVE_PAGE_BIT))
                         + active_page_add
+                        + zero_page_add
                 }).collect(),
             }
         ]
@@ -227,6 +238,15 @@ fn get_page_content(pid: i32, page_addr_start: usize, pages: usize) -> std::io::
     mem_file.seek(SeekFrom::Start(page_addr_start as u64))?;
     let mut mem: Vec<u8> = Vec::with_capacity(pages * PAGE_SIZE);
     mem.resize(pages * PAGE_SIZE, 0); // why do I have to do this...?
+    mem_file.read_exact(mem.as_mut_slice())?;
+    Ok(mem)
+}
+
+fn get_pfn_content(pfn: usize) -> std::io::Result<Vec<u8>> {
+    let mut mem_file = File::open("/dev/mem")?;
+    mem_file.seek(SeekFrom::Start((pfn * PAGE_SIZE) as u64))?;
+    let mut mem: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
+    mem.resize(PAGE_SIZE, 0); // why do I have to do this...?
     mem_file.read_exact(mem.as_mut_slice())?;
     Ok(mem)
 }

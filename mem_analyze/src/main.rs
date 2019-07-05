@@ -34,6 +34,10 @@ fn main() -> std::io::Result<()> {
              .long("pid")
              .takes_value(true)
              .multiple(true))
+        .arg(Arg::with_name("inspect-ram")
+             .short("i")
+             .long("inspect-ram")
+             .multiple(true))
         .get_matches();
 
     let region: String = match matches.value_of("region") {
@@ -49,6 +53,8 @@ fn main() -> std::io::Result<()> {
         None => Vec::new(),
     };
 
+    let inspect_ram: bool = matches.is_present("inspect-ram");
+
     if pids.len() > 0 {
         info!("PID supplied: {:?}\n", pids);
         loop {
@@ -63,7 +69,7 @@ fn main() -> std::io::Result<()> {
         info!("No PIDs; analyzing whole system\n");
         loop {
             let start_time = Utc::now();
-            let process_memory = mem_analyze::dump::get_host_memory(SLEEP_TIME)?;
+            let process_memory = mem_analyze::dump::get_host_memory(SLEEP_TIME, inspect_ram)?;
             mem_analyze::persist::write_process_memory(0, &region, &process_memory)?;
             mem_analyze::statistics::page_analytics(&process_memory);
             info!("---------- Completed analysis in in {} ms ----------",
