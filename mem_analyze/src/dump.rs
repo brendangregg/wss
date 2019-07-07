@@ -36,10 +36,10 @@ pub fn get_host_memory(sleep: u64, inspect_ram: bool) -> Result<super::ProcessMe
     let idlemap = load_idlemap()?;
     Ok(super::ProcessMemory {
         timestamp: snapshot_time,
-        segments: vec![
+        segments: get_physical_segments()?.iter().map(|segment|
             super::Segment {
                 addr_start: 0,
-                page_flags: get_kpageflags()?.into_iter().enumerate().map(|(pfn_idx, pfn_flags)| {
+                page_flags: get_kpageflags(segment).unwrap().into_iter().enumerate().map(|(pfn_idx, pfn_flags)| {
                     let active_page_add = get_active_add(pfn_idx as u64, &idlemap);
                     let zero_page_add: u64 = match inspect_ram {
                         true => match get_pfn_content(pfn_idx) {
@@ -56,7 +56,7 @@ pub fn get_host_memory(sleep: u64, inspect_ram: bool) -> Result<super::ProcessMe
                         + zero_page_add
                 }).collect(),
             }
-        ]
+        ).collect(),
     })
 }
 
@@ -72,7 +72,7 @@ pub fn get_memory(pid: i32, sleep: u64) -> Result<super::ProcessMemory, std::io:
     let snapshot_time = Utc::now();
     //signal::kill(nix_pid, signal::Signal::SIGSTOP);
     let idlemap = load_idlemap()?;
-    let segments: Vec<Segment> = get_segments(pid)?.into_iter()
+    let segments: Vec<Segment> = get_virtual_segments(pid)?.into_iter()
         .filter(|s| s.start_address < USERSPACE_END && s.size >= SEGMENT_THRESHOLD)
         .collect();
     debug!("Process has {} (filtered segments", segments.len());
@@ -156,36 +156,33 @@ struct Segment {
 }
 
 fn get_pagemap(pid: i32, segment: &Segment) -> std::io::Result<Vec<u64>> {
+    return read_segment_data_from_file(segment, &format!("/proc/{}/pagemap", pid));
+}
+
+fn get_kpageflags(segment: &Segment) -> std::io::Result<Vec<u64>> {
+    return read_segment_data_from_file(segment, KPAGEFLAGS_PATH);
+}
+
+fn read_segment_data_from_file(segment: &Segment, file_path: &str) -> std::io::Result<Vec<u64>> {
     let start_time = Utc::now();
     assert_eq!(segment.start_address % PAGE_SIZE, 0);
     // This is why we need to run the program as root
     // https://www.kernel.org/doc/Documentation/vm/pagemap.txt
-    let mut file = File::open(format!("/proc/{}/pagemap", pid))?;
+    let mut file = File::open(file_path)?;
     // 64-bits = 8 bytes per page
     file.seek(SeekFrom::Start((segment.start_address / PAGE_SIZE) as u64 * 8))?;
-    let mut pagemap: Vec<u8> = Vec::with_capacity((segment.size / PAGE_SIZE) * 8);
-    pagemap.resize((segment.size / PAGE_SIZE ) * 8, 0);
-    file.read_exact(pagemap.as_mut_slice())?;
-    assert_eq!(pagemap.len() % 8, 0);
-    let mut pagemap_words: Vec<u64> = Vec::with_capacity(pagemap.len() / 8);
-    pagemap_words.resize(pagemap.len() / 8, 0);
-    LittleEndian::read_u64_into(&pagemap, &mut pagemap_words);
-    debug!("Loaded process pagemap in {} ms", (Utc::now() - start_time).num_milliseconds());
-    Ok(pagemap_words)
+    let mut data_bytes: Vec<u8> = Vec::with_capacity((segment.size / PAGE_SIZE) * 8);
+    data_bytes.resize((segment.size / PAGE_SIZE ) * 8, 0);
+    file.read_exact(data_bytes.as_mut_slice())?;
+    assert_eq!(data_bytes.len() % 8, 0);
+    let mut data_words: Vec<u64> = Vec::with_capacity(data_bytes.len() / 8);
+    data_words.resize(data_bytes.len() / 8, 0);
+    LittleEndian::read_u64_into(&data_bytes, &mut data_words);
+    debug!("Loaded {} in {} ms", file_path, (Utc::now() - start_time).num_milliseconds());
+    Ok(data_words)
 }
 
-fn get_kpageflags() -> std::io::Result<Vec<u64>> {
-    let start_time = Utc::now();
-    let mut kpageflags: Vec<u8> = Vec::with_capacity(system_ram_pages() * 8);
-    File::open(KPAGEFLAGS_PATH)?.read_to_end(&mut kpageflags)?;
-    let mut kpageflags_words: Vec<u64> = Vec::with_capacity(kpageflags.len() / 8);
-    kpageflags_words.resize(kpageflags.len() / 8, 0);
-    LittleEndian::read_u64_into(&kpageflags, &mut kpageflags_words);
-    debug!("Kpageflags loaded in {} ms", (Utc::now() - start_time).num_milliseconds());
-    Ok(kpageflags_words)
-}
-
-fn get_segments(pid: i32) -> Result<Vec<Segment>, io::Error> {
+fn get_virtual_segments(pid: i32) -> Result<Vec<Segment>, io::Error> {
     let mut segments: Vec<Segment> = Vec::new();
     let file = File::open(format!("/proc/{}/maps", pid))?;
     for line in BufReader::new(file).lines() {
@@ -197,6 +194,25 @@ fn get_segments(pid: i32) -> Result<Vec<Segment>, io::Error> {
             })
         } else {
             error!("Unable to parse maps line: {}", line);
+        }
+    }
+    Ok(segments)
+}
+
+fn get_physical_segments() -> Result<Vec<Segment>, io::Error> {
+    let mut segments: Vec<Segment> = Vec::new();
+    let file = File::open("/proc/iomem")?;
+    for line in BufReader::new(file).lines() {
+        let line = line?;
+        if line.contains("System RAM") {
+            if let Ok((a, b)) = scan_fmt!(&line, "{x}-{x}", [hex usize], [hex usize]) {
+                segments.push(Segment {
+                    start_address: a,
+                    size: b - a,
+                })
+            } else {
+                error!("Unable to parse maps line: {}", line);
+            }
         }
     }
     Ok(segments)
