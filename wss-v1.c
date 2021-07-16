@@ -12,8 +12,9 @@
  *
  * http://www.brendangregg.com/wss.pl
  *
- * Currently written for x86_64 and default page size only. Early version:
- * probably has bugs.
+ * Currently written for x86_64 and default page size only. Tested on aarch64
+ * (Neoverse N1SDP reference platform) with default page size and works fine too.
+ * Early version: probably has bugs.
  *
  * COMPILE: gcc -o wss-v1 wss-v1.c
  *
