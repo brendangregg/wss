@@ -245,7 +245,7 @@ int loadidlemap()
 	p = g_idlebuf;
 	// unfortunately, larger reads do not seem supported
 	while ((len = read(idlefd, p, IDLEMAP_CHUNK_SIZE)) > 0) {
-		p += IDLEMAP_CHUNK_SIZE;
+		p += 1;
 		g_idlebufsize += len;
 	}
 	close(idlefd);
