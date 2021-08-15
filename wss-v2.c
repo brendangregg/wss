@@ -149,7 +149,7 @@ int mapidle(pid_t pid, unsigned long long mapstart, unsigned long long mapend)
 			err = 1;
 			goto out;
 		}
-		idlebits = g_idlebuf[idlemapp];
+		idlebits = g_idlebuf[idlemapp / 8];
 		if (g_debug > 1) {
 			printf("R: p %llx pfn %llx idlebits %llx\n",
 			    p[i], pfn, idlebits);
@@ -245,7 +245,7 @@ int loadidlemap()
 	p = g_idlebuf;
 	// unfortunately, larger reads do not seem supported
 	while ((len = read(idlefd, p, IDLEMAP_CHUNK_SIZE)) > 0) {
-		p += IDLEMAP_CHUNK_SIZE;
+		p += 1;
 		g_idlebufsize += len;
 	}
 	close(idlefd);
